@@ -1,7 +1,8 @@
 REPOSITORY INFORMATION
 ============
  [![License: GPL v3](https://img.shields.io/badge/License-GPL%20v3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
-[![Generic badge](https://img.shields.io/badge/VersionDate-2017.11.28-green.svg)](https://shields.io/)FORK
+[![Generic badge](https://img.shields.io/badge/VersionDate-2017.11.28-green.svg)](https://shields.io/)
+
 This fork of DMC is maintained by Michael Wilson but please see notes below for authorship, information on usage, and project history. Please see https://osf.io/pbwx8/ for Wiki and further information.
 
 INTRODUCTION
