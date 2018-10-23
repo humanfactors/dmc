@@ -1,0 +1,489 @@
+---
+title: "DMC Lesson 1 Models and Data"
+---
+
+*Note*: Before running these scripts, the current working directory must be set to the top-level folder containing the dmc
+ and tutorial subfolders
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_knit$set(root.dir = 'C:/Code/dmc/')
+
+```
+
+
+# Lesson 1.1 Models
+
+```{r include=FALSE}
+rm(list=ls())
+source ("dmc/dmc.R")
+```
+
+For this lesson we're using the LBA model. Only one model can be active at a time. Models are specified in the "models"
+directory under the "dmc" directory. It also contains further sub-directories, the names of which are the first argument
+to the load_model function. These subdirectories contain a file "dists.R" which defines the random and likelihood
+functions that define the model in its core parameterization. The second argument to load_model specifies a particular
+model parameterization. For the following LBA model the core parameterization is in terms of the threshold "b" parameter
+but we will use a re-parameterization B=b-A (where A is start point variability) defined in "lba_B.R".
+
+```{r include=FALSE}
+load_model(dir_name="LBA",model_name="lba_B.R")
+```
+
+**NB1**: See ?LBA for rtdists package help on the LBA parameters.  
+**NB2**: More advanced users can create their own reparameterizations using an
+     existing model file as a template to alter the three functions it contains
+     transform.dmc, random.dmc and likelihood.dmc (See the lessons in
+     dmc_2_3_AddModel1.R and dmc_2_4_AddModel2.R, but it is recommended you
+     work through to the end of lesson 4 first.
+
+
+- SETTING UP A MODEL requires 6 steps, in three groups. 
+- Steps 1-5 create a set of list and vector objects, and can be done in any order. 
+- Step 6 uses these objects as arguments to the "model.dmc" function, which creates an array object ("model") with a set
+  of attributes specifying a particular model and parameterization.
+
+## Example 1
+
+A single subject with parameters varying with response (R) and correctness (M, for match) in a minimal design with one
+factor (S, a two level stimulus factor) that is used to score two possible responses named "r1" and "r2".
+
+The first three steps specify the factors, possible responses, and how they are scored for accuracy (this mapping
+creates a new factor "M", with levels "true" and "false").
+
+The next two steps specify details about the model parameters and how they relate to factors (including M).
+
+**(1)** Create a named list ( e.g., "factors" ) specifying factor names ( = list names ) and factor levels ( = character
+vectors assigned to corresponding list elements ).
+
+``` {r}
+factors <- list(S=c("s1","s2"))  # Stimulus 1 and Stimulus 2
+```
+
+
+NB: Factor levels cannot contain a "." as this is used by DMC to
+concantanate factor levels from multiple factors.
+
+
+**(2)** Create a character vector ( e.g., "responses" ) giving the names of the
+possible responses ( usually levels (data$R) in the data frame )
+
+
+``` {r}
+responses <- c("r1","r2")        # Response 1 and Response 2
+```
+
+
+**(3)** Create "match.map", a list of lists, where the first entry is a list named "M" that specifies which accumulator (or
+boundary, for the DDM model) matches the correct response for each factor level. Accumulators/boundaries can be
+specified by the corresponding response name or an integer 1..n for n response possibilities (see dmc_1_6 and dmc_1_7
+for more advanced scoring when there are more than two responses).
+
+``` {r}
+match.map <- list(M=list(s1="r1",s2="r2"))
+```
+
+NB: Typically the levels all come from one factor, but can be a combination of levels from different factors. In this
+case the levels must be specified in the same order as factor names (see 1 above and dmc_5_1 and dmc_5_2)
+
+For this example we will setup an LBA model where the B parameter varies with the response (R), mean_v and sd_v vary
+with match (M), and there are constants for st0 and for the sd_v of the mismatching accumulator.
+
+**(4)** Create "p.map", a list which tells DMC how the factors specified above map onto the parameters of the model.
+These "EXTERNAL PARAMETERS TYPES" are defined in a model parameterization file ("lba_B.R" in this example), and
+"FACTORS" are specified in steps (1) & (3) (usually M for the latter).
+
+``` {r}
+p.map <- list(A="1",B="R",t0="1",mean_v="M",sd_v="M",st0="1")
+```
+
+NB1: The R and M factors MUST be given last when used with a parameter influenced by more than one factor
+
+NB2: The "1" indicates that the same estimated value will be assumed for all cells in the design (i.e., an "intercept"
+parameter).
+
+
+
+**(5)** Create "const", a vector which specifies the parameters to be held constant (i.e., not varied in fitting), and their
+values.
+
+``` {r}
+constants <- c(sd_v.false=1,st0=0)
+```
+
+
+NB: DMC names parameters by the parameter-type name and (possibly) concatenated factor levels to which they apply, e.g.,
+"parameter_type_name.level_factor_A.level_factor_B ..." Again these levels must be in the same order as names in step
+(1) Once a model is created you can view these names (assuming you called the model "model") using :
+attr(model,"p.vector")
+
+
+Now we create the model object, specifying the "norm" distribution function (one of the options for the LBA model in the
+"rtdists" package "n1PDF" function, passed through to the "likelihood.dmc" function in the "lba_B.R" script.)
+
+
+**(6)** Use the objects created in steps 1 to 5 as arguments to the function
+"model.dmc" in order to create a Boolean array (with a set of attributes,
+e.g., "model") that specifies the model to be fit.
+
+``` {r}
+model <- model.dmc(p.map,match.map=match.map,constants=constants,
+                   factors=factors,responses=responses,type="norm")
+model
+```
+
+
+NB1: The following things are checked and will cause a STOP:
+
+1. Factors names "M", "R", and "1" (intecept factor) are reserved
+2. Factor levels must be unique within AND BETWEEN factors
+3. List "match.map" must have values in responses
+4. Where match.map contains more than one list their names cannot be the same as factor names from (1)
+
+
+This information is also available as attributes of the model object, e.g:
+
+``` {r}
+attr(model,"p.vector")
+attr(model,"constants")
+attr(model,"type")
+attr(model,"posdrift")
+```
+
+NB: The "posdrift" boolean is a modifier specific to the norm type of the LBA model (see "rtdists")
+
+## Model Matrix
+
+There is one matrix for each accumulator, with row names showing the level.response naming and the columns the
+parameter-type.level naming for parameters. The booleans show which parameters map to which design+response cell.
+
+"model" is used by the function "p.df.dmc" (in dmc_model.R) to perform parameter assignment for each row (i) of the
+model array, and transforms and creates parameters as specified in "transform.dmc" (in "lba_B.R")
+
+To see this, first create a parameter vector to map. These are not very sensible values, chosen just so we can see
+differences in the following printout
+
+``` {r}
+p.vector  <- c(A=3,B.r1=4,B.r2=5,
+               mean_v.true=2,mean_v.false=-1,
+               sd_v.true=0.5,
+               t0=.2)
+```
+
+The "model" array above is computationally efficient but it is not easy to see how parameters map to design cells. The
+function "print.cell.p" makes it easy to loop through cells and print the mapping.
+
+``` {r}
+print.cell.p(p.vector,model)
+```
+
+
+NB1: the rows are in "n1" order, that is, for ".r1" cells the first row is "r1", for ".r2" cells the first row is "r2".
+This is because "n1PDF" (in the "rtdists" package) returns the likelihood for first unit or node in a set of
+accumulators (the term n1 mean "node one") with parameters corresponding to the first entries in each parameter type's
+parameter vector.
+
+NB2: "transform.dmc" creates b = A+B, so the columns are the "internal" parameter types for the LBA (i.e., the name
+expected by "n1PDF" given the type designator passed to likelihood.dmc). "transform.dmc" can also be used to change the
+scale on which parameters are sampled. For example, you might sample sd_v on a log scale to enforce positivity, so
+"transform.dmc" would have to calculate `par.df$sd_v <- exp(par.df$log_sd_v)` 
+
+Most of the DMC lessons use very simple designs. If you want to know how to setup more complex designs see the advanced
+lesson dmc_5_1_Factorial.R. If you want to see how to setup more complex scoring see dmc_5_2_Scoring.R.
+
+# Lesson 1.2 Simulating one subject's data, and likelihoods
+
+```
+Note: Before running these scripts, the current working directory must be set 
+to the top-level folder containing the dmc and tutorial subfolders 
+
+RSTUDIO USERS: Plots can cause the error message: "Error in plot.new() : figure margins too large". This is not a DMC
+bug, it just means your screen size is limited. You can fix this by maximizing the plot pane before plotting, or
+reducing the number of panels and plotting multiple windows using par(mfrow=c(x,y)) with smaller x and y values (see
+below for details).
+```
+
+It is essential to be able to simulate data from any model you want to use for several reasons:
+
+1. So you can play with the model, changing its parameters and seeing the effects, just as you would run experiments and
+analyse data to understand the effects of experimental manipulations.
+2. So you can check your estimation procedure is working. If you can’t recover the parameters that you used to simulate
+a very large data set data by fitting to that simulated data then something is wrong.
+3. To check if your estimation procedure will work in the experimental design you intend to apply it to. Sometimes the
+estimation procedure works in very large samples but fails in the design you are using in real a real experiment.
+Simulating and fitting helps guide you to the design you need.
+
+
+### Simulating Data.
+
+The function `simulate.dmc` (in `dmc_model.R`) makes a data frame based on the parameter vector and the model, with _n_
+observations for each row in model. _n_ can be a scalar or a vector of length equal to the number of rows (i.e., design
+cells) in model.
+
+``` {r}
+data <- simulate.dmc(p.vector,model,n=1)
+```
+
+```
+Indicative results (subject to randomness):
+S  R       RT
+1 s1 r1 3.308407
+2 s2 r2 2.336722
+```
+
+The function `data.model.dmc` combines the data frame (which would normally come from an experiment rather than being
+simulated) and the model so it can be passed as a single object to `likelihood.dmc` (in `lba_B.R` in `dmc/models`) in
+order to calculate the likelihood of a parameter vector.
+
+The likelihood summarizes all of the information in the data relevant to model fitting. As you will see in later lessons
+having a likelihood is the key to being able to perform Bayesian estimation. By convention, we call a specific
+combination of experimental data and a particular model a data-model instance (`data.model`)
+
+``` {r}
+data.model <- data.model.dmc(data,model)
+```
+
+This also adds "cell.index" and "cell.empty" attributes used to speed the computation of the likelihood.
+`likelihood.dmc` computes a vector of likelihoods, one for each RT (in the) same order as in the data frame.
+_Note that the output must always be greater than or equal to the function's parameter `min.like` argument (`1e-10` by default)._
+
+``` {r}
+likelihood.dmc(p.vector,data.model)
+```
+
+At this point it is worth taking a look at `lba_B.R`: `transform.dmc` allows a flexible relationship between the standard
+model and the model parameterization (e.g., `b` vs. `B`) `likelihood.dmc` interfaces with the rtdists function
+
+Let's simulate some more realistic data (with `n=1e4` observations per row):
+
+``` {r}
+p.vector <- c(A=1,B.r1=1,B.r2=1,mean_v.true=1,mean_v.false=0,sd_v.true=1,t0=.2)
+data1 <- simulate.dmc(p.vector,model,1e4)
+data.model1 <- data.model.dmc(data1,model)
+```
+
+Look at the accuracy and density for each stimulus level (correct responses are in black and error responses are in red)
+
+``` {r}
+plot.cell.density(data.model1[data.model1$S=="s1",],C="r1",xlim=c(0,4))
+plot.cell.density(data.model1[data.model1$S=="s2",],C="r2",xlim=c(0,4))
+```
+
+Look at how summed log-likelihood varies around the true value using function `profile.dmc` in `dmc_plotting.R`. This
+function takes a parameter name and min/max values to graph, and also prints the maximum likelihood estimate for the
+parameter, which should tend to the true value for large samples
+
+``` {r}
+ylim=c(-35000,-32000)
+par(mfrow=c(2,3))
+profile.dmc("A",           .1,  2,p.vector,data.model1,ylim=ylim)
+profile.dmc("B.r1",        .1,  2,p.vector,data.model1,ylim=ylim)
+profile.dmc("mean_v.true", .1,  2,p.vector,data.model1,ylim=ylim)
+profile.dmc("sd_v.true",   .1,  2,p.vector,data.model1,ylim=ylim)
+profile.dmc("t0",          .01,.4,p.vector,data.model1,ylim=ylim)
+```
+
+NB1: Rstudio sometimes give an error if you try to plot too many panels in one plot. To avoid this you can sometimes
+make the plotting area big before you run the command. You could also ask for fewer panels e.g., `par(mfrow=c(1,3))`
+which will do one row of 3 panels over two pages, or you could shrink the margins around the plots, e.g., put
+`mar=rep(2,4)` inside `par()` (this shrinks each of the four margins around a panel to a value of `2`, you can use
+smaller or larger values).   
+NB2: If you dont specify the ylim argument or set its value to NA `profile.dmc` will choose its
+own scale, but this will likely differ across parameters so be careful when you compare graphs for different parameters.
+
+### Simulating Data For Unbalanced Designs.
+
+An unbalanced design can be simulated by making n a vector of the same length as the number of cells in the design. Here
+we have 2 observations for `s1` and 4 for `s2`.
+
+``` {r}
+simulate.dmc(p.vector,model,n=c(2,4))
+```
+
+\pagebreak
+
+# 1.3 Exploring the LBA model
+
+Start with a simple design with a binary stimulus factor, S 
+(e.g, left vs. right motion) and corresponding responses.  
+
+```{r}
+factors=list(S=c("left","right"))
+responses=c("LEFT","RIGHT")
+match.map=list(M=list(left="LEFT",right="RIGHT"))
+
+```
+
+
+NB1: For the LBA one of B, mean_v or sd_v must be fixed in at least one
+   cell of the design. In this case we fix sd_v.false = 1. For simplicity we
+   will also fix mean_v.false=0.
+NB2: See ?LBA for rtdists help on parameters
+
+
+```{r}
+consts=c(st0=0,sd_v.false=1,mean_v.false=0)
+```
+
+Design where there are no effects except greater than chance accuracy due to
+a `mean_v.true > mean_v.false` and Parameter vector names are: 
+
+```{r}
+p.map=list(A="1",B="1",mean_v="M",sd_v="M",t0="1",st0="1")
+model <- model.dmc(type="norm",constants=consts,p.map=p.map,
+                   match.map=match.map,factors=factors,responses=responses)
+attr(model,"p.vector")
+
+```
+
+### 1) Fast and error prone performance
+
+N.B. sd_v.true < sd_v.false as is often seen in practice
+
+```{r}
+p.vector  <- c(A=1,B=0,mean_v.true=1,sd_v.true=0.66,t0=.2)
+data.model <- data.model.dmc(simulate.dmc(p.vector,model,n=1e4),model)
+
+```
+
+
+The score & plot:
+
+```{r}
+correct <- data.model$S==tolower(data.model$R)
+round(mean(correct),2)                       # Accuracy
+round(tapply(data.model$RT,list(correct),mean),2) # Errors/correct similar speed
+plot.cell.density(data.model,C=correct,xlim=c(0,5)) # (red represents error)
+
+```
+
+### 2) Raise the threshold to improve accuracy, makes errors slow
+
+Score & plot (using a convenience function which does the same as 
+the previous code, useful for simple scoring situations such as this)
+
+```{r}
+p.vector  <- c(A=1,B=1,mean_v.true=1,sd_v.true=0.66,t0=.2)
+data.model <- data.model.dmc(simulate.dmc(p.vector,model,n=1e4),model)
+plot.score.dmc (data.model)
+```
+
+
+
+
+
+### 3) Lowering start-point noise has similar effects
+
+```{r}
+p.vector  <- c(A=.25,B=.75,mean_v.true=1,sd_v.true=0.66,t0=.2)
+data.model <- data.model.dmc(simulate.dmc(p.vector,model,n=1e4),model)
+plot.score.dmc (data.model)
+
+```
+
+NB: Further analyses are relative to case (2) above
+
+### 4) Increasing matching rate increases accuracy and speed
+
+```{r}
+p.vector  <- c(A=1,B=1,mean_v.true=1.5,sd_v.true=0.66,t0=.2)
+data.model <- data.model.dmc(simulate.dmc(p.vector,model,n=1e4),model)
+plot.score.dmc (data.model)
+```
+
+
+
+### 5) Decreasing sd_v.true increases accuracy and creates fast errors
+
+```{r}
+p.vector  <- c(A=1,B=1,mean_v.true=1.5,sd_v.true=0.33,t0=.2)
+data.model <- data.model.dmc(simulate.dmc(p.vector,model,n=1e4),model)
+plot.score.dmc (data.model)
+```
+
+
+### 6) Increasing t0 slows things down again but has no effect on accuracy
+
+```{r}
+p.vector  <- c(A=1,B=1,mean_v.true=1.5,sd_v.true=0.66,t0=.4)
+data.model <- data.model.dmc(simulate.dmc(p.vector,model,n=1e4),model)
+plot.score.dmc (data.model)
+
+```
+
+*NB*: t0 has the same effect for all models.
+
+Let's allow non-decision time to be variable across trials, so do not set `st0=0`.
+Let's re-run `(2)` for comparison (but with a larger t0), and add a
+printout of variability (as that is what's affected by st0). We use the inter-
+quartile range to measure variability as it is robust against large outliers.
+
+
+```{r}
+p.vector  <- c(A=1,B=1,mean_v.true=1,sd_v.true=0.66,t0=.4)
+data.model <- data.model.dmc(simulate.dmc(p.vector,model,n=1e4),model)
+# Score & plot 
+plot.score.dmc (data.model, IQR=TRUE)  # Show inter-quartile range
+
+```
+
+### 7) 
+
+
+We set st0 to 0.2s. As t0 specifies the MINIMUM non-decision time we subtract st0/2 from t0 in order to maintain the
+same mean non-decision time (what is usually referred to as ter). Also, any change in non-decision time parameters has
+no effect on accuracy (because t0 distributes uniformly.)
+    
+```{r}
+consts=c(sd_v.false=1,mean_v.false=0) # consts
+
+p.map=list(A="1",B="1",mean_v="M",sd_v="M",t0="1",st0="1") # p.map
+
+model <- model.dmc(type="norm",constants=consts,p.map=p.map,
+                   match.map=match.map,factors=factors,responses=responses)
+
+p.vector  <- c(A=1,B=1,mean_v.true=1,sd_v.true=0.66,t0=.1,st0=.2)
+data.model <- data.model.dmc(simulate.dmc(p.vector,model,n=1e4),model)
+
+
+# Score & plot
+plot.score.dmc (data.model, IQR=TRUE)
+
+
+```
+    
+
+### 8) Response bias can be introduced by allowing B to vary with accumulator (R)
+
+```{r}
+
+consts=c(st0=0,sd_v.false=1,mean_v.false=0)
+p.map=list(A="1",B="R",mean_v="M",sd_v="M",t0="1",st0="1")
+model <- model.dmc(type="norm",constants=consts,
+                   p.map=p.map,match.map=match.map,
+                   factors=factors,responses=responses)
+
+```
+
+For example, a bias to respond left
+```{r}
+p.vector  <- c(A=1,B.LEFT=.5,B.RIGHT=1.5,mean_v.true=1,sd_v.true=0.66,t0=.2)
+data.model <- data.model.dmc(simulate.dmc(p.vector,model,n=1e4),model)
+correct <- data.model$S==tolower(data.model$R)
+# Right is now below chance
+round(tapply(correct,data.model$S,mean),2)      
+# Correct responses to left are faster and to right slower, but the opposite
+# patterns shows in errors (and hence slow errors for left and fast for right)
+round(tapply(data.model$RT,list(data.model$S,correct),mean),2)   
+par(mfrow=c(1,2))
+plot.cell.density(data.model[data.model$S=="left",],
+                  C=correct[data.model$S=="left"],
+                  xlim=c(0,5),ymax=1.0,main="left")
+plot.cell.density(data.model[data.model$S=="right",],
+                  C=correct[data.model$S=="right"],
+                  xlim=c(0,5),ymax=1.0,main="right")
+
+```
+
+
